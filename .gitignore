@@ -46,6 +46,7 @@ Network Trash Folder
 Temporary Items
 .apdisk
 
-# Custom tutorial files
+# Custom tutorial files and others
 openAir.conf
 chromedriver.exe
+src/MANIFEST-INF
