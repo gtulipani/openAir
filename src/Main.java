@@ -21,6 +21,7 @@ import java.util.Scanner;
 public class Main {
     //Enum con las claves que se leeran en el confFile. Si se agrega un nueva key, debe agregarse el correspondiente parámetro, con el mismo nombre, pero en lowerCase
     private enum ConfKey {
+        OPENAIR,
         COMPANY,
         USER,
         PASSWORD,
@@ -30,12 +31,13 @@ public class Main {
     }
 
     //confFile parameters
-    private static String company;
-    private static String user;
-    private static String password;
-    private static String charge_code;
-    private static String date;
-    private static String chrome_driver;
+    private static String openair = "";
+    private static String company = "";
+    private static String user =  "";
+    private static String password = "";
+    private static String charge_code = "";
+    private static String date = "";
+    private static String chrome_driver = "";
 
     //Log related constants
     private final static String LOG_FILE = "activity.log";
@@ -51,7 +53,6 @@ public class Main {
     private final static String KEY_NOT_FOUND = "Se ha detectado una línea del archivo " + CONF_FILE_NAME + " que no contiene ninguna clave.  La misma ha sido omitida. Las claves y los valores se dividen a través del caracter " + CONF_FILE_SEPARATOR + ".";
     private final static String JVM_NO_PERMISSION_REFLECTION = "La JVM no permite el uso de Reflection. Modifique este comportamiento para que el programa funcione.";
 
-    private final static String OPEN_AIR_URL = "https://www.openair.com/index.pl";
     private final static String OPEN_AIR_X053_COMPANY_PROJECT = "AT&T : (X053) Software Engineering Expense";
     private final static String OPEN_AIR_TIMESHEET_CREADA = "Se ha creado la Timesheet correspondiente a la fecha " + date + ".";
     private final static String OPEN_AIR_TIMESHEET_SUBMITTEADA = "Se ha submitteado la Timesheet correspondiente a la fecha " + date + " con el " + ConfKey.CHARGE_CODE.name() + "= \"" + charge_code + "\"";
@@ -62,10 +63,12 @@ public class Main {
     private final static String DRIVER_INIT = "El driver del navegador ha sido cargado.";
     private final static String DRIVER_CLOSING = "El driver del navegador ha sido cerrado.";
     private final static String DRIVER_PATH_NOT_VALID = "El driver del navegador no puso ser cargado. Revise el valor de " + ConfKey.CHROME_DRIVER.name() + ".";
-    private final static String URL_NOT_VALID = "La URL especificada para la aplicación: \"" + OPEN_AIR_URL + "\" se encuentra mal conformada. Por favor revísela.";
-    private final static String URL_NOT_REACHABLE = "La URL especificada para la aplicación: \"" + OPEN_AIR_URL + "\" no se puede cargar. Revise la misma y la conexión a internet.";
+    private final static String URL_NOT_VALID = "La URL especificada para la aplicación: \"" + openair + "\" se encuentra mal conformada. Por favor revísela.";
+    private final static String URL_NOT_REACHABLE = "La URL especificada para la aplicación: \"" + openair + "\" no se puede cargar. Revise la misma y la conexión a internet.";
     private final static String LOGIN_NOT_VALID = "El logueo en la aplicación no ha sido exitoso. Revise los valores de " + ConfKey.COMPANY.name() + ", " + ConfKey.USER.name() + " y " + ConfKey.PASSWORD.name() + ".";
     private final static String LOGIN_VALID = "El logueo en la aplicación ha sido exitoso.";
+    private final static String DATE_NOT_VALID = "No se pudo encontrar la fecha especificada a través de la clave " + ConfKey.DATE.name() +  " en el selector al momento de creación de la timesheet. Revise la misma. Proceso abortado.";
+    private final static String CHARGE_CODE_NOT_VALID = "No se pudo encontrar el charge code especificado a través de la clave " + ConfKey.CHARGE_CODE.name() +  " en el selector al momento de creación de la timesheet. Revise la misma. Proceso abortado.";
 
     public static void main(String[] args) {
         File logFile = new File(LOG_FILE);
@@ -90,6 +93,7 @@ public class Main {
         openAirProcess(driver, wait, logFile);
     }
 
+    //Método que se encarga de analizar el archivo de configuración confFile
     private static void analizeConfFile(File logFile) {
         try {
             parseConfigurationFile(logFile);
@@ -97,6 +101,8 @@ public class Main {
             logWriter(logFile, CONF_FILE_NOT_FOUND);
             System.exit(1);
         }
+        //Valido que se hayan parseado todas las claves
+        keysValidator();
     }
 
     //Método que se encarga de iniciar el navegador Web
@@ -132,6 +138,8 @@ public class Main {
                 encontrado = true;
             }
         }
+        if (!encontrado)
+            throw new ChargeCodeNoEncontradoException();
         return completeName;
     }
 
@@ -185,7 +193,13 @@ public class Main {
         //Selecciono la Timesheet starting date correspondiente. En teoría debería estar marcada por defecto, pero por las dudas.
         wait.until(ExpectedConditions.presenceOfElementLocated(By.xpath("//*[@id=\"row_section_0\"]/table/tbody/tr[2]/td/select")));
         Select dateSelector = new Select(driver.findElement(By.xpath("//*[@id=\"row_section_0\"]/table/tbody/tr[2]/td/select")));
-        dateSelector.selectByVisibleText(date);
+        try {
+            dateSelector.selectByVisibleText(date);
+        } catch (NoSuchElementException e) {
+            logWriter(logFile, DATE_NOT_VALID);
+            closeDriver(driver, logFile);
+            System.exit(1);
+        }
 
         //Oprimo el botón Save
         driver.findElement(By.xpath("//*[@id=\"formButtonsBottom\"]/input[2]")).click();
@@ -201,8 +215,13 @@ public class Main {
         wait.until(ExpectedConditions.presenceOfElementLocated(By.id("ts_c3_r1")));
         wait.until(ExpectedConditions.elementToBeClickable(By.id("ts_c3_r1")));
         Select taskSelector = new Select(driver.findElement(By.id("ts_c3_r1")));
-        String taskCompleteName = obtenerNombreChargeCode(driver);
-        taskSelector.selectByVisibleText(taskCompleteName);
+        try {
+            taskSelector.selectByVisibleText(obtenerNombreChargeCode(driver));
+        } catch (ChargeCodeNoEncontradoException e) {
+            logWriter(logFile, CHARGE_CODE_NOT_VALID);
+            closeDriver(driver, logFile);
+            System.exit(1);
+        }
 
         //Completo los campos correspondientes con 8 horas
         driver.findElement(By.id("ts_c6_r1")).sendKeys("8");
@@ -223,7 +242,7 @@ public class Main {
             logWriter(logFile, OPEN_AIR_SCREENSHOT_NO_CREADA);
             esperarConfirmaciónDelUsuario();
             closeDriver(driver, logFile);
-            System.exit(1);
+            System.exit(0);
         }
 
         logWriter(logFile, OPEN_AIR_SCREENSHOT_CREADA);
@@ -272,6 +291,47 @@ public class Main {
         }
     }
 
+    /* Método que se encarga de modificar el campo @variable por el valor @claveValor a través de reflection
+    ** @variable: Field que representa una variable
+    ** @claveValor: String cuyo valor será guardado en @variable
+     */
+    private static void modificarVariableString(Field variable, String claveValor) {
+        variable.setAccessible(true);
+
+        try {
+            variable.set((new Main()).getClass(), claveValor);
+        } catch (IllegalAccessException e) {
+            throw new NoPermissionOnJVMReflectionException();
+        }
+
+        variable.setAccessible(false);
+    }
+
+    //Método que se encarga de obtener una variable a través de su nombre a través del uso de reflection
+    private static Field obtenerVariableDeNombre(String claveLeida) {
+        Field field;
+        Class<?> c = (new Main()).getClass();
+
+        try {
+            field = c.getDeclaredField(claveLeida);
+        } catch (NoSuchFieldException e) {
+            //Si la clave leida no tiene su correspondiente variable
+            throw new ClaveNoValidaException();
+        }
+        return field;
+    }
+
+    //Método que se encarga de obtener el valor que almacena el Field @variable a través de reflection
+    private static String obtenerValorDeVariable(Field variable) {
+        String valorVariable;
+        try {
+            valorVariable = (String) variable.get((new Main()).getClass());
+        } catch (IllegalAccessException e) {
+            throw new NoPermissionOnJVMReflectionException();
+        }
+        return valorVariable;
+    }
+
     //Método que se encarga de tomar la linea del confFile y obtener la clave que representa
     private static String parseKey(String linea) {
         String lineaCortada;
@@ -285,33 +345,14 @@ public class Main {
         return lineaCortada;
     }
 
-    //Método que se encarga de analizar línea del confFile y sobreescribir las variables estáticas mediante el uso de Reflection
+    //Método que se encarga de analizar línea del confFile y parsear las claves
     private static void parseLine(String linea) {
         String claveLeida = parseKey(linea);
+        //Obtengo lo que se encuentra a la derecha del caracter separador
+        String claveValor = linea.substring(ConfKey.valueOf(claveLeida).name().length() + 1);
 
-        //Comienzo del uso de Reflection para modificar la variable correspondiente a la clave
-        {
-            Field field;
-            Class<?> c = (new Main()).getClass();
-
-            try {
-                field = c.getDeclaredField(claveLeida.toLowerCase());
-            } catch (NoSuchFieldException e) {
-                //Si la clave leida no tiene su correspondiente variable
-                throw new ClaveNoValidaException();
-            }
-
-            field.setAccessible(true);
-
-            try {
-                field.set(c, linea.substring(ConfKey.valueOf(claveLeida).name().length() + 1));
-            } catch (IllegalAccessException e) {
-                throw new NoPermissionOnJVMReflectionException();
-            }
-
-            field.setAccessible(false);
-        }
-        //Fin del uso de Reflection para modificar la variable correspondiente a la clave
+        //Tener en cuenta que las variables se llaman de igual forma que las claves pero toda en minúsculas
+        modificarVariableString(obtenerVariableDeNombre(claveLeida.toLowerCase()), claveValor);
     }
 
     //Método que se encarga de parsear el archivo de configuración y obtener los valores que se utilizaran en el programa
@@ -351,9 +392,16 @@ public class Main {
 
     //Método que verifica la conexión a una determinada página web
     private static void validateHttpRequest(URL url) throws IOException {
+
         HttpURLConnection urlConnect = (HttpURLConnection)url.openConnection();
         //Esta linea fallará si no existe conexión con la URL
         Object objData = urlConnect.getContent();
+    }
+
+    //Método que pide al usuario un campo faltante y devuelve el valor
+    private static String obtenerCampoFaltante(ConfKey claveFaltante) {
+        System.out.print("El campo " + claveFaltante.name() + " no ha podido ser detectado en el archivo " + CONF_FILE_NAME + ". Por favor ingrese el valor del mismo: ");
+        return (new Scanner(System.in).nextLine());
     }
 
     //Método que se encarga de cargar el driver correspondiente y abrirlo en la URL deseada
@@ -365,8 +413,13 @@ public class Main {
         } catch (IllegalStateException e) {
             throw new DriverPathNoValidoException();
         }
+
+        //Verifico si la URL fue parseada
+        if (openair.equals(""))
+            //Informo por pantalla el faltante de la URL y la pido manualmente
+            openair = obtenerCampoFaltante(ConfKey.OPENAIR);
         try {
-            validateHttpRequest(new URL(OPEN_AIR_URL));
+            validateHttpRequest(new URL(openair));
         } catch (MalformedURLException e) {
             closeDriver(driver, logFile);
             throw new URLMalConformadaException();
@@ -376,22 +429,17 @@ public class Main {
         }
 
         logWriter(logFile, DRIVER_INIT);
-        driver.get(OPEN_AIR_URL);
+        driver.get(openair);
         return driver;
     }
 
-    private static void userCredentialsValidator() {
-        if (company.equals("")) {
-            System.out.print("El campo " + ConfKey.COMPANY.name() + " no ha podido ser detectado en el archivo " + CONF_FILE_NAME + ". Por favor ingrese el valor del mismo: ");
-            company = (new Scanner(System.in).nextLine());
-        }
-        if (user.equals("")) {
-            System.out.print("El campo " + ConfKey.USER.name() + " no ha podido ser detectado en el archivo " + CONF_FILE_NAME + ". Por favor ingrese el valor del mismo: ");
-            user = (new Scanner(System.in).nextLine());
-        }
-        if (password.equals("")) {
-            System.out.print("El campo " + ConfKey.PASSWORD.name() + " no ha podido ser detectado en el archivo " + CONF_FILE_NAME + ". Por favor ingrese el valor del mismo: ");
-            password = (new Scanner(System.in).nextLine());
+    //Método que verifica si los campos de Login han sido parseados del confFile (uso nuevamente reflection)
+    private static void keysValidator() {
+        for(ConfKey key : ConfKey.values()) {
+            //Tener en cuenta que las variables asociadas a las claves tienen el mismo nombre pero toda en minúsculas
+            Field variableAsociada = obtenerVariableDeNombre(key.name().toLowerCase());
+            if (obtenerValorDeVariable(variableAsociada).equals("")) //El String se encuentra vacío
+                modificarVariableString(variableAsociada, obtenerCampoFaltante(key));
         }
     }
 
@@ -407,9 +455,6 @@ public class Main {
         companyField.clear();
         userField.clear();
         passwordField.clear();
-
-        //Valido que existan los campos de company, user y password
-        //userCredentialsValidator();
 
         //Ingreso datos de company, user y password y logueo
         companyField.sendKeys(company);
