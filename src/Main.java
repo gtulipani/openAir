@@ -237,7 +237,7 @@ public class Main {
         //Saco captura de pantalla para enviar por mail
         File scrFile = ((TakesScreenshot)driver).getScreenshotAs(OutputType.FILE);
         try {
-            FileUtils.copyFile(scrFile, new File(obtenerNombreScreenshot()));
+            FileUtils.copyFile(scrFile, new File(obtenerNombreScreenshot() + ".jpg"));
         } catch (IOException | NoSePudoGenerarScreenshotException e) {
             logWriter(logFile, OPEN_AIR_SCREENSHOT_NO_CREADA);
             esperarConfirmaciónDelUsuario();
