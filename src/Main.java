@@ -26,8 +26,11 @@ public class Main {
         USER,
         PASSWORD,
         CHARGE_CODE,
+        COMPANY_PROJECT_CODE,
         DATE,
-        CHROME_DRIVER;
+        CHROME_DRIVER,
+        TYPE,
+        HOURS;
     }
 
     //confFile parameters
@@ -36,8 +39,11 @@ public class Main {
     private static String user =  "";
     private static String password = "";
     private static String charge_code = "";
+    private static String company_project_code = "";
     private static String date = "";
     private static String chrome_driver = "";
+    private static String type = "";
+    private static String hours = "";
 
     //Log related constants
     private final static String LOG_FILE = "activity.log";
@@ -53,11 +59,13 @@ public class Main {
     private final static String KEY_NOT_FOUND = "Se ha detectado una línea del archivo " + CONF_FILE_NAME + " que no contiene ninguna clave.  La misma ha sido omitida. Las claves y los valores se dividen a través del caracter " + CONF_FILE_SEPARATOR + ".";
     private final static String JVM_NO_PERMISSION_REFLECTION = "La JVM no permite el uso de Reflection. Modifique este comportamiento para que el programa funcione.";
 
-    private final static String OPEN_AIR_X053_COMPANY_PROJECT = "AT&T : (X053) Software Engineering Expense";
     private final static String OPEN_AIR_TIMESHEET_CREADA = "Se ha creado la Timesheet correspondiente a la fecha " + date + ".";
     private final static String OPEN_AIR_TIMESHEET_SUBMITTEADA = "Se ha submitteado la Timesheet correspondiente a la fecha " + date + " con el " + ConfKey.CHARGE_CODE.name() + "= \"" + charge_code + "\"";
     private final static String OPEN_AIR_SCREENSHOT_NO_CREADA = "No se ha podido crear la screenshot correspondiente para el día " + date + ".";
     private final static String OPEN_AIR_SCREENSHOT_CREADA = "Se ha creado la screenshot correspondiente para el día " + date + ".";
+    private final static String OPEN_AIR_SCREENSHOT_WAIT_ERROR = "Ha ocurrido un error al momento de sacar la screenshot. Puede sacarla ahora y oprimir ENTER una vez haya finalizado...";
+    private final static String OPEN_AIR_SCREENSHOT_WAIT_SUCCEED = "Una vez que termine de cargar la página oprima ENTER y se tomará la captura de pantalla inmediatamente.";
+    private final static String OPEN_AIR_CARGA_NO_AUTOMÁTICA = "Usted ha elegido el método de carga no automática. Seleccione manualmente el/los códigos e ingrese las correspondientes horas. Una vez que ha terminado oprima ENTER y se continuará con el proceso.";
 
     //webDriver related constants
     private final static String DRIVER_INIT = "El driver del navegador ha sido cargado.";
@@ -68,7 +76,11 @@ public class Main {
     private final static String LOGIN_NOT_VALID = "El logueo en la aplicación no ha sido exitoso. Revise los valores de " + ConfKey.COMPANY.name() + ", " + ConfKey.USER.name() + " y " + ConfKey.PASSWORD.name() + ".";
     private final static String LOGIN_VALID = "El logueo en la aplicación ha sido exitoso.";
     private final static String DATE_NOT_VALID = "No se pudo encontrar la fecha especificada a través de la clave " + ConfKey.DATE.name() +  " en el selector al momento de creación de la timesheet. Revise la misma. Proceso abortado.";
+    private final static String COMPANY_CODE_NOT_VALID = "No se pudo encontrar el company charge code especificado a través de la clave " + ConfKey.COMPANY_PROJECT_CODE.name() +  " en el selector al momento de creación de la timesheet. Revise la misma. Proceso abortado.";
     private final static String CHARGE_CODE_NOT_VALID = "No se pudo encontrar el charge code especificado a través de la clave " + ConfKey.CHARGE_CODE.name() +  " en el selector al momento de creación de la timesheet. Revise la misma. Proceso abortado.";
+    private final static String TYPE_AUTOMATIC = "A";
+    private final static String TYPE_MANUAL = "M";
+    private final static String TYPE_NOT_VALID = "Debe elegir un modo de procesamiento válido a través de la clave " + ConfKey.TYPE.name() + ". Debe elegir el valor Y o N.";
 
     public static void main(String[] args) {
         File logFile = new File(LOG_FILE);
@@ -155,8 +167,8 @@ public class Main {
     }
 
     //Este método congela el funcionamiento hasta que el usuario oprima una tecla. Se utiliza para darle tiempo a sacar una screenshot en caso de error
-    private static void esperarConfirmaciónDelUsuario() {
-        System.out.print("Ha ocurrido un error al momento de sacar la screenshot. Puede sacarla ahora y oprimir una tecla una vez haya finalizado...");
+    private static void esperarConfirmaciónDelUsuario(String cadena) {
+        System.out.print(cadena);
         try {
             int caracterEspera = System.in.read();
         } catch (IOException e) {
@@ -205,11 +217,86 @@ public class Main {
         driver.findElement(By.xpath("//*[@id=\"formButtonsBottom\"]/input[2]")).click();
         logWriter(logFile, OPEN_AIR_TIMESHEET_CREADA);
 
+        if (cargaAutomática()) {
+            realizarCargaAutomática(driver, wait, logFile);
+        }
+        else {
+            esperarConfirmaciónDelUsuario(OPEN_AIR_CARGA_NO_AUTOMÁTICA);
+        }
+
+        //Oprimo Save and Submit
+        driver.findElement(By.id("save_grid_submit")).click();
+        logWriter(logFile, OPEN_AIR_TIMESHEET_SUBMITTEADA);
+
+        //Saco captura de pantalla para enviar por mail
+
+        esperarConfirmaciónDelUsuario(OPEN_AIR_SCREENSHOT_WAIT_SUCCEED);
+        File scrFile = ((TakesScreenshot)driver).getScreenshotAs(OutputType.FILE);
+        try {
+            FileUtils.copyFile(scrFile, new File(obtenerNombreScreenshot() + ".jpg"));
+        } catch (IOException | NoSePudoGenerarScreenshotException e) {
+            logWriter(logFile, OPEN_AIR_SCREENSHOT_NO_CREADA);
+            esperarConfirmaciónDelUsuario(OPEN_AIR_SCREENSHOT_WAIT_ERROR);
+            closeDriver(driver, logFile);
+            System.exit(0);
+        }
+
+        logWriter(logFile, OPEN_AIR_SCREENSHOT_CREADA);
+
+        //Cierro el navegador
+        closeDriver(driver, logFile);
+    }
+
+    private static boolean cargaAutomática() {
+        boolean result;
+        if (type.equals(TYPE_AUTOMATIC)) {
+            result = true;
+        }
+        else {
+            if (type.equals(TYPE_MANUAL)) {
+                result = false;
+            }
+            //Ingresé un valor inválido
+            else {
+                char answer = '\0';
+                System.out.println(TYPE_NOT_VALID);
+                result = false;
+                while (!respuestaValida(answer)) {
+                    System.out.print("Especifique el tipo de operación 'A' (Automática) o 'M' (Manual): ");
+                    answer = (new Scanner(System.in)).next().charAt(0);
+                    if (!respuestaValida(answer)) {
+                        System.out.println("La respuesta ha sido incorrecta. Recuerde ingresar 'A' o 'M'.");
+                    }
+                    else {
+                        if (Character.toUpperCase(answer) == TYPE_AUTOMATIC.charAt(0)) {
+                            result = true;
+                        }
+                    }
+                }
+
+            }
+        }
+        return result;
+    }
+
+    //Éste método valida si la respuesta ingresada por el usuario corresponde a un tipo
+    private static boolean respuestaValida(char answer) {
+        return (((Character.toUpperCase(answer) == TYPE_MANUAL.charAt(0)) || (Character.toUpperCase(answer) == TYPE_AUTOMATIC.charAt(0))));
+    }
+
+    //Éste método se encarga de realizar la carga en caso que sea automática
+    private static void realizarCargaAutomática(WebDriver driver, WebDriverWait wait, File logFile) {
         //Completo el campo correspondiente a Company: Project
         wait.until(ExpectedConditions.presenceOfElementLocated(By.id("ts_c2_r1")));
         wait.until(ExpectedConditions.elementToBeClickable(By.id("ts_c2_r1")));
         Select companySelector = new Select(driver.findElement(By.id("ts_c2_r1")));
-        companySelector.selectByVisibleText(OPEN_AIR_X053_COMPANY_PROJECT);
+        try {
+            companySelector.selectByVisibleText(company_project_code);
+        } catch (NoSuchElementException e) {
+            logWriter(logFile, COMPANY_CODE_NOT_VALID);
+            closeDriver(driver, logFile);
+            System.exit(1);
+        }
 
         //Guardo todas las Task correspondientes al Project y elijo aquella que empieza con el CHARGE_CODE que obtuve
         wait.until(ExpectedConditions.presenceOfElementLocated(By.id("ts_c3_r1")));
@@ -224,31 +311,11 @@ public class Main {
         }
 
         //Completo los campos correspondientes con 8 horas
-        driver.findElement(By.id("ts_c6_r1")).sendKeys("8");
-        driver.findElement(By.id("ts_c7_r1")).sendKeys("8");
-        driver.findElement(By.id("ts_c8_r1")).sendKeys("8");
-        driver.findElement(By.id("ts_c9_r1")).sendKeys("8");
-        driver.findElement(By.id("ts_c10_r1")).sendKeys("8");
-
-        //Oprimo Save and Submit
-        driver.findElement(By.id("save_grid_submit")).click();
-        logWriter(logFile, OPEN_AIR_TIMESHEET_SUBMITTEADA);
-
-        //Saco captura de pantalla para enviar por mail
-        File scrFile = ((TakesScreenshot)driver).getScreenshotAs(OutputType.FILE);
-        try {
-            FileUtils.copyFile(scrFile, new File(obtenerNombreScreenshot() + ".jpg"));
-        } catch (IOException | NoSePudoGenerarScreenshotException e) {
-            logWriter(logFile, OPEN_AIR_SCREENSHOT_NO_CREADA);
-            esperarConfirmaciónDelUsuario();
-            closeDriver(driver, logFile);
-            System.exit(0);
-        }
-
-        logWriter(logFile, OPEN_AIR_SCREENSHOT_CREADA);
-
-        //Cierro el navegador
-        closeDriver(driver, logFile);
+        driver.findElement(By.id("ts_c6_r1")).sendKeys(hours);
+        driver.findElement(By.id("ts_c7_r1")).sendKeys(hours);
+        driver.findElement(By.id("ts_c8_r1")).sendKeys(hours);
+        driver.findElement(By.id("ts_c9_r1")).sendKeys(hours);
+        driver.findElement(By.id("ts_c10_r1")).sendKeys(hours);
     }
 
     //Método que se encarga de cerrar el navegador y guardar el correspondiente mensaje en el archivo de Log
