@@ -7,7 +7,7 @@ Proyecto enteramente académico para explorar la tecnología Selenium con Java ,
 - Reflection: un ejemplo práctico dónde se buscan variables en tiempo de ejecución de acuerdo a su nombre, y se modifica su valor.
 
 #Consideraciones
-Para que el programa funcione, debe existir un archivo de texto llamado "openAir.conf", que almacene las claves que se utilizarán a lo largo del programa. Cada línea debe contener una clave, y las claves son las siguientes: COMPANY, USER, PASSWORD, CHARGE_CODE, DATE, CHROME_DRIVER.
+Para que el programa funcione, debe existir un archivo de texto llamado "openAir.conf", que almacene las claves que se utilizarán a lo largo del programa. Cada línea debe contener una clave, y las claves son las siguientes: COMPANY, USER, PASSWORD, COMPANY_PROJECT_CODE, CHARGE_CODE, DATE, CHROME_DRIVER, TYPE, HOURS.
 
 #Archivos en el repositorio
 A modo de ejemplo, se encuentra un archivo llamado "openAir.conf" y otro llamado "chromedriver.exe" en el repositorio, los cuales no se descargan automáticamente (añadidos al .gitignore). El segundo es el software necesario para que funcione la automatización en Chrome.
